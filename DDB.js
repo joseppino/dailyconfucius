@@ -1,4 +1,4 @@
-import { DynamoDBClient, GetItemCommand, DescribeTableCommand, ScanCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, GetItemCommand, DescribeTableCommand, ScanCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 
 const client = new DynamoDBClient({ region: "eu-west-2" });
 
@@ -7,14 +7,12 @@ async function getRandomQuoteFromDB() {
   const tableName = "DailyConfuciusQuotes";
   const numQuotes = await getNumQuotes(tableName);
   const generatedId = getRandomInt(0,numQuotes-1).toString();
-  console.log("generatedId", generatedId);
   
   const params = {
     TableName: tableName,
     Key: {
       QuoteID: {N: generatedId},
-    },
-    // ProjectionExpression: "ATTRIBUTE_NAME",
+    }
   };
 
   const command = new GetItemCommand(params);
@@ -110,4 +108,49 @@ function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-getNewQuote();
+export async function setStale(quoteId) {
+
+  const ts = getUnixTimestamp();
+
+  const params = {
+    TableName: "StaleQuotes",
+    Item: {
+      Id: { N: generateUniqueNumericId().toString() },
+      QuoteID: { N: quoteId },
+      createdAt: { N: ts.toString() },
+      expireAt: { N: (ts + 5266800).toString() } // expire in two months
+    }
+  };
+
+  const command = new PutItemCommand(params);
+
+  try {
+    const response = await client.send(command);
+    console.log(response);
+    
+    if(response) {
+      return true;
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  return false;
+}
+
+function generateUniqueNumericId() {
+  // Get current timestamp in milliseconds
+  const timestamp = Date.now();
+  
+  // Generate a random number between 0 and 999999
+  const randomPart = Math.floor(Math.random() * 1000000);
+  
+  // Combine timestamp and random number to create a unique ID
+  // Multiply timestamp by 1000000 to leave room for the random part
+  const uniqueId = (timestamp * 1000000) + randomPart;
+  
+  return uniqueId;
+}
+
+function getUnixTimestamp() {
+  return Math.floor(Date.now() / 1000);
+}
